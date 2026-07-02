@@ -84,15 +84,17 @@
     /* ------------------------------------------------------------------ */
     #cursor {
       position: absolute;
-      width: 18px; height: 24px;
+      width: 30px; height: 42px;
       pointer-events: none;
-      transform: translate(-2px, -2px);
+      transform-origin: 0 0;
       opacity: 0;
       transition: opacity 120ms ease-out;
-      filter: drop-shadow(0 1px 2px rgba(0,0,0,0.55));
+      filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));
       z-index: 6;
     }
     #cursor.visible { opacity: 1; }
+    /* Soft hover halo + click ripple, drawn in the SVG hotspot layer. */
+    #hotspot-ring { transition: none; }
 
     /* Caption pill — rendered during export so the MP4 carries the        */
     /* step narration as an on-screen callout.                             */
@@ -264,9 +266,9 @@
         </svg>
         <div id="spotlight-overlay" aria-hidden="true"></div>
         <div id="cursor" aria-hidden="true">
-          <svg width="18" height="24" viewBox="0 0 18 24" xmlns="http://www.w3.org/2000/svg">
-            <path d="M0 0 L0 19 L5 14.5 L8.2 22 L11 20.7 L7.8 13.2 L14 13 Z"
-                  fill="#ffffff" stroke="#1a1d22" stroke-width="1.2" stroke-linejoin="round" />
+          <svg width="30" height="42" viewBox="0 0 30 42" xmlns="http://www.w3.org/2000/svg">
+            <path d="M0 0 L0 32 L8.5 24.5 L13.8 37 L18.5 35 L13.2 22.5 L23.5 22 Z"
+                  fill="#ffffff" stroke="#151719" stroke-width="1.8" stroke-linejoin="round" />
           </svg>
         </div>
       </div>
@@ -812,11 +814,14 @@
       const vp = (STATE.spec && STATE.spec.viewport) || { width: 1440, height: 900 };
       const r = _exp_targetRect(step);
       const rel = (r.width * r.height) / Math.max(1, vp.width * vp.height);
-      if (rel < 0.02) return 2.0;
-      if (rel < 0.08) return 1.7;
-      if (rel < 0.2)  return 1.5;
-      if (rel < 0.5)  return 1.3;
-      return 1.15;
+      // Punch in HARD on little chips/icons so they read; ease off for big
+      // elements that already fill the frame.
+      if (rel < 0.006) return 2.6;   // tiny icon / chip
+      if (rel < 0.02)  return 2.3;
+      if (rel < 0.06)  return 2.0;
+      if (rel < 0.15)  return 1.7;
+      if (rel < 0.35)  return 1.4;
+      return 1.2;
     }
 
     function defaultStepKeyframes(stepIndex) {
@@ -825,15 +830,16 @@
       const t = (step.interaction && step.interaction.target) || {};
       const h = (step.interaction && step.interaction.hotspot) || {};
       const sel = t.selector || 'body';
+      // Snappy by default: quick zoom in, a short beat to read it, quick out.
       return [
         { stepIndex: stepIndex, action: 'spotlightOn', target: sel,
-          duration: 200, intensity: 0.65 },
+          duration: 160, intensity: 0.6 },
         { stepIndex: stepIndex, action: 'zoomTo', target: sel,
           offset: { x: Number.isFinite(h.xPct) ? h.xPct : 50,
                     y: Number.isFinite(h.yPct) ? h.yPct : 50 },
-          zoomLevel: defaultZoomLevel(step), duration: 650, easing: 'ease-in-out' },
-        { stepIndex: stepIndex, action: 'hold', duration: 2200 },
-        { stepIndex: stepIndex, action: 'spotlightOff', duration: 200 },
+          zoomLevel: defaultZoomLevel(step), duration: 460, easing: 'ease-out' },
+        { stepIndex: stepIndex, action: 'hold', duration: 1300 },
+        { stepIndex: stepIndex, action: 'spotlightOff', duration: 160 },
       ];
     }
 
@@ -1064,7 +1070,9 @@
       } else if (step && step.voiceoverBase64) {
         voiceMs = 3000; // audio present but no word timings — estimate
       }
-      return Math.max(2800, timelineMs + 400, voiceMs + 400);
+      // Snappy floor when silent (catch the stream); narration, when present,
+      // sets its own longer floor so we never cut a caption off.
+      return Math.max(1900, timelineMs + 300, voiceMs + 350);
     }
 
     function goToStep(targetIndex, direction = 1, force = false) {
@@ -1312,9 +1320,9 @@
       const timeline = getTimeline();
       const fit = computeFit();
 
-      const TRANS = 350;       // screenshot crossfade
-      const FLY = 550;         // cursor flight duration
-      const TAIL = 1400;       // outro: zoom back out, settle
+      const TRANS = 260;       // screenshot crossfade — quick
+      const FLY = 430;         // cursor flight duration — snappy
+      const TAIL = 950;        // outro: zoom back out, settle
 
       // ---- step windows --------------------------------------------
       let t = 0;
@@ -1342,7 +1350,7 @@
           return;
         }
         const cam = _exp_camFor(steps[w.index], zoomKf.offset, zoomKf.zoomLevel, fit);
-        const zoomDur = Math.max(400, Math.min(1200, zoomKf.duration || 600));
+        const zoomDur = Math.max(320, Math.min(800, zoomKf.duration || 480));
         // Voice-sync: land the camera when the narrator hits the key word.
         let arrive;
         if (Number.isFinite(zoomKf.tStartMs) && zoomKf.tStartMs > 0) {
@@ -1350,7 +1358,7 @@
         } else {
           arrive = w.tStart + Math.max(TRANS, FLY - 100) + zoomDur;
         }
-        arrive = Math.max(w.tStart + 500, Math.min(arrive, w.tEnd - 900));
+        arrive = Math.max(w.tStart + 380, Math.min(arrive, w.tEnd - 650));
         const depart = Math.max(w.tStart, arrive - zoomDur);
         w.camArrive = arrive;
         camWps.push({ t: depart, cam: camPrev });
@@ -1533,22 +1541,35 @@
       $cursor.style.top  = cur.pos.y + 'px';
       $cursor.classList.add('visible');
       $cursor.style.opacity = '1';
+      // Hold a bold, roughly-constant ON-SCREEN cursor size no matter how far
+      // the camera is zoomed in (Supademo-style), with a quick press-dip at
+      // the click for tactile feel.
+      const cScale = Math.max(0.7, Math.min(3.0, 1.2 / cam.scale));
+      let press = 1;
+      const clickAt = win.clickAt != null ? win.clickAt : (win.tStart + 900);
+      if (Math.abs(tMs - clickAt) < 110) press = 0.85;
+      $cursor.style.transform = 'scale(' + (cScale * press) + ')';
 
       const hp = _exp_hotspotPoint(steps[i]);
       $hotspot.setAttribute('cx', hp.x);
       $hotspot.setAttribute('cy', hp.y);
       $hotspotRing.setAttribute('cx', hp.x);
       $hotspotRing.setAttribute('cy', hp.y);
-      // Deterministic pulse: gentle breathing dot, expanding ring on click.
-      // The dot marks the click target on the pre-click stage — once the
-      // result page fades in, it no longer points at anything.
-      const pulse = 1 + 0.14 * Math.sin(2 * Math.PI * ((tMs % 1400) / 1400));
-      $hotspot.style.transform = 'scale(' + pulse + ')';
-      $hotspot.style.opacity = tMs < fadeStart + c.TRANS ? '0.85' : '0';
-      if (cur.lastClick != null && tMs - cur.lastClick < 650) {
-        const rp = (tMs - cur.lastClick) / 650;
-        $hotspotRing.style.transform = 'scale(' + (0.6 + rp * 1.8) + ')';
-        $hotspotRing.style.opacity = String(Math.max(0, 1 - rp));
+      const preClick = tMs < fadeStart + c.TRANS; // target valid on pre-click stage
+      // Subtle target dot before the click; gone once the result fades in.
+      $hotspot.style.transform = 'scale(0.75)';
+      $hotspot.style.opacity = preClick && tMs < clickAt + 120 ? '0.5' : '0';
+      // Hover halo just before the click, then a bright expanding ripple on it.
+      if (preClick && tMs > clickAt - 340 && tMs < clickAt) {
+        const hb = 1 + 0.12 * Math.sin(2 * Math.PI * ((tMs % 900) / 900));
+        $hotspotRing.style.stroke = '#4f8cff';
+        $hotspotRing.style.transform = 'scale(' + (1.05 * hb) + ')';
+        $hotspotRing.style.opacity = '0.45';
+      } else if (tMs >= clickAt && tMs - clickAt < 520) {
+        const rp = (tMs - clickAt) / 520;
+        $hotspotRing.style.stroke = '#4f8cff';
+        $hotspotRing.style.transform = 'scale(' + (0.5 + rp * 2.1) + ')';
+        $hotspotRing.style.opacity = String(Math.max(0, 0.95 * (1 - rp)));
       } else {
         $hotspotRing.style.opacity = '0';
       }

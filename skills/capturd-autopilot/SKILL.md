@@ -1,6 +1,6 @@
 ---
 name: capturd-autopilot
-description: React to a plain-English order like "turn on Captur'd and grab me a video/pictures of X" and JUST DO IT — no clarifying questions. Launches Captur'd on the user's screen, drives the walkthrough autonomously (or turn-by-turn if they want to talk to it live), streams frames into chat, and delivers a Supademo-grade MP4/GIF/stills. Load this whenever the user says: turn on capturd / sunsponge, take pictures/screenshots, record a walkthrough, make a demo video, film this app/flow, or "go capture X".
+description: React to a plain-English order like "turn on Captur'd and grab me a video/pictures of X" and JUST DO IT — no clarifying questions. Launches Captur'd on the user's screen, drives the walkthrough autonomously OR lets them hit the mic and TALK to it live ("click the house button, now type this") while it performs on camera, zooms tight on what it clicks with a bold cursor, streams frames into chat, and delivers a Supademo-grade MP4/GIF/stills. Load this whenever the user says: turn on capturd / sunsponge, take pictures/screenshots, record a walkthrough, make a demo video, film this app/flow, talk to it / drive it by voice, or "go capture X".
 ---
 
 # Captur'd Autopilot — the user says "go", the film crew shows up
@@ -30,6 +30,35 @@ Deciding defaults (never ask, just pick):
 - **Mode** — `agent` (self-driving) unless they say they want to steer it → then `live`.
 - **Visible** — `true` for anything they're watching (that's the point). `false` only for a
   silent background render.
+
+## DIRECTION — the taste that makes it look like Supademo, not a screen-grab
+This is the part that matters. The tool gives you camera, cursor, spotlight and
+voiceover; **you are the director.** Bake this in every time:
+
+- **Videotape it — don't just screenshot.** Stills (`capture.*`) are only for "give me
+  pictures." A walkthrough is a *video*: `demo.*` recording → `demo.export mp4`.
+- **Zoom into the thing you touch — especially the small stuff.** When you click a little
+  chip, a toolbar icon, a menu item — punch the camera IN on it (the engine already zooms
+  harder on small targets; trust it, and don't fight it by targeting the whole page). The
+  viewer wants a precise selector so the zoom lands tight on the element, not a vague region.
+- **The click rhythm:** camera lands on the target → the cursor flies in → the click ripples →
+  a **short beat** so the eye reads what happened → move on. That half-second beat at the click
+  is the only place you slow down.
+- **Otherwise, keep it QUICK.** No long hangs, no slow drifting, no 3-second holds. The owner
+  wants to be able to *catch the stream* — snappy zooms, short holds, brisk cursor. If it feels
+  sluggish, it's wrong. Default camera style is **snappy**; only use `cinematic`/slow if they
+  ask for a dramatic, luxurious pace.
+- **One idea per step.** Don't cram. Each step = one action + one crisp caption.
+- **Narrate tight.** A short caption/voiceover line per step ("Open the Reports tab", "Export
+  as PDF"). The voice carries the story; keep it human and brief, never a paragraph.
+- **The mouse is a character.** It's a big, bold cursor with a hover halo and a click ripple —
+  that's on by default in the export. Let it hover a touch before it clicks; don't teleport.
+- **Cut the fat.** After the run, if a step is dead weight or the agent wandered, `demo.trim`
+  it; if a zoom missed the target, `demo.regenerate` that step. Ship tight, not padded.
+
+If someone asks "how should I tell it to record," this is the answer: *use the walkthrough
+recorder (not screenshots); drive it one action per step; zoom in tight on whatever you click;
+hold a half-beat at the click and keep everything else quick; narrate each step in a few words.*
 
 ## STEP 0 — reach Captur'd (two rails; pick whichever is wired)
 
@@ -78,30 +107,49 @@ still work keyless (deterministic zoom, selector-based captions, free Edge-TTS v
 the *self-driving* needs it. If it's missing, switch to **Play 2** (you become the driver)
 rather than stalling.
 
-## PLAY 2 — Live-drive ("let me talk to it as it records") — the marquee one
+## PLAY 2 — Live-drive: the owner TALKS, it performs on camera — the marquee one
 
-The user types "click the house button top-left — that's the one — now type this", and you
-make the video as they go. **MCP only.**
+The magic: the owner hits the **mic button** in the recording window and just *talks* —
+"go ahead and click the house button… that's the one… now type my email" — and the product
+performs it, on camera, while they speak. **Nothing is typed on screen** (typing would show
+the chat in the recording; the whole point is that it looks like the product performing to
+voice). **MCP only.**
 
-1. `demo.record` → `{ url, name, goal, mode:"live", visible:true }` → `sessionId`. The window
-   pops up on their screen and waits for you.
-2. For each thing they tell you, translate it to ONE `demo.act`:
-   - "click the house button" → `{ session_id, action:"click", selector:"<the home link>",
-     note:"This is the home button" }`
-   - "type my email" → `{ action:"input", selector:"#email", value:"...", note:"Enter your
-     email" }`
-   - "scroll down" → `{ action:"scroll", value:"down" }`
-   - "go to pricing" → `{ action:"navigate", value:"https://.../pricing" }`
-   Each `demo.act` returns `{ stepIndex, url, pageTitle, frameBase64 }`. **Show that frame in
-   chat** so they see the stream — that's the whole experience.
-   - Resolving the selector is YOUR job, not theirs: they speak plain English ("the house
-     button"); you read the returned frame + page title and pick a stable CSS selector (`#id`
-     > `.class` > text). If a click misses, look at the next frame and try a better selector —
-     don't bounce the question back to them.
-3. `note` on an act, or a standalone `demo.narrate` `{ session_id, text }`, sets the on-screen
-   caption + voiceover for that step ("That's the one — the home button").
-4. When they're done ("that's it / render it") → `demo.stop`, wait for `enriched`,
-   `demo.export mp4`, deliver.
+**Voice-first loop (default):**
+1. `demo.record` → `{ url, name, goal, mode:"live", visible:true }` → `sessionId`. Voice is ON
+   by default in live mode; a 🎤 button appears in the recording window. Tell the owner in one
+   line: "Live — hit the mic and tell me what to do."
+2. **Poll for speech:** every ~1.5s call `demo.poll_voice` `{ session_id }`. It returns
+   `{ transcripts:[...] }` — whatever they've said since the last poll (empty = nothing new).
+   Keep polling the whole session.
+3. **For each transcript, resolve → act:**
+   - `demo.look` `{ session_id }` → a frame + a digest of on-screen elements, each with a ready
+     CSS `selector`, its visible `text`, `role`, `placeholder`, `rect`. Match their words to an
+     element ("the house button" → the element whose text/label is Home/🏠) and get its selector.
+   - `demo.act` `{ session_id, action, selector, value?, note? }` — do the one thing they asked.
+     `note` is the caption/voiceover for that step (keep it short — see DIRECTION).
+   - Each `demo.act` returns a `frameBase64` (with the big cursor on the target). **Show it in
+     chat** so they see the stream.
+   - Resolving speech → selector is YOUR job. They talk in plain English; you use `demo.look`
+     to find the element. If a click misses, `demo.look` again and pick a better selector —
+     never bounce the question back to them mid-flow.
+4. When they say "that's it / render it" → `demo.stop`, wait for `enriched`, `demo.export mp4`,
+   deliver.
+
+**If voice isn't available** (the host lacks the voice extra / no mic — `poll_voice` returns
+`voiceEnabled:false`): fall back to them TYPING the instructions to you in chat. Same loop, the
+transcript just comes from chat instead of `poll_voice`. Say so in one line so they know why.
+
+**Voice setup (one-time on the host that runs the server):** `pip install "capturd[voice]"`
+(faster-whisper + sounddevice). Whisper runs on **CPU** by default (portable — don't switch to
+CUDA unless the box has the cuBLAS libs). The first time the mic is used it downloads the STT
+model (~small.en) once, so the very first utterance has a short lag; after that it's instant.
+
+Action cheatsheet for `demo.act`:
+- click → `{ action:"click", selector, note }`
+- type → `{ action:"input", selector, value, note }`
+- scroll → `{ action:"scroll", value:"down"|"up"|"top"|"bottom"|"<px>" }`
+- navigate → `{ action:"navigate", value:"https://..." }`
 
 ## PLAY 3 — Just pictures (stills)
 
@@ -133,6 +181,7 @@ lives in the host env.
 ## One-liners the user might say → what you do
 - "turn on capturd and film the dashboard" → Play 1, agent mode, visible, mp4.
 - "grab me pics of the pricing page" → Play 3, `capture.rested` on the pricing URL.
-- "let me drive it — record while I click through onboarding" → Play 2, live mode.
+- "let me drive it by voice — I'll talk you through onboarding" → Play 2, live mode, mic on.
+- "record while I click through onboarding" → Play 2, live mode.
 - "make me a gif of the login" → Play 1, `format:"gif"`.
 Never answer any of these with a question. Launch it.

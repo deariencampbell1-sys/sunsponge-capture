@@ -130,7 +130,7 @@ def _build_server(forge: DemoForge | None = None) -> FastMCP:
         visible: bool | None = None,
         viewport: dict[str, int] | None = None,
         workflow: bool = False,
-        voice: bool = False,
+        voice: bool | None = None,
     ) -> dict[str, Any]:
         if not url:
             raise ValueError("url is required")
@@ -147,8 +147,11 @@ def _build_server(forge: DemoForge | None = None) -> FastMCP:
             "mode": mode,
             "viewport": viewport or {"width": 1440, "height": 900},
             "workflow": workflow,
-            "voice": voice or workflow,
         }
+        # Leave voice unset (None) so live mode's default-on applies; only pin
+        # it when the caller is explicit or workflow mode forces it.
+        if voice is not None or workflow:
+            payload["voice"] = bool(voice) or workflow
         if visible is not None:
             payload["visible"] = bool(visible)
         try:
@@ -292,6 +295,59 @@ def _build_server(forge: DemoForge | None = None) -> FastMCP:
         recorder = live["recorder"]
         try:
             return await asyncio.to_thread(recorder.narrate, text)
+        except DemoRecorderError as exc:
+            raise ValueError(str(exc)) from exc
+
+    # ---- demo.poll_voice (voice-drive) -----------------------------------
+
+    @mcp.tool(
+        name="demo.poll_voice",
+        description=(
+            "Fetch (and clear) what the owner has SAID into the live session's "
+            "mic since the last poll. Returns {transcripts:[...], voiceEnabled}. "
+            "This is the magic loop: the owner holds the mic and talks in plain "
+            "language ('go ahead and click the house button'); you poll this, "
+            "turn each transcript into demo.look + demo.act, and the product "
+            "performs on camera while they talk — nothing typed shows on screen. "
+            "Poll every ~1.5s while a live session is open."
+        ),
+        timeout=15.0,
+    )
+    async def demo_poll_voice(session_id: str) -> dict[str, Any]:
+        if not session_id:
+            raise ValueError("sessionId is required")
+        live = _live_sessions.get(session_id)
+        if live is None or live["mode"] != "live":
+            raise ValueError(f"no live session for id {session_id!r}")
+        recorder = live["recorder"]
+        try:
+            return await asyncio.to_thread(recorder.poll_voice)
+        except DemoRecorderError as exc:
+            raise ValueError(str(exc)) from exc
+
+    # ---- demo.look (voice-drive helper) ----------------------------------
+
+    @mcp.tool(
+        name="demo.look",
+        description=(
+            "Look at the live session right now: returns a frame plus a digest "
+            "of the interactable elements on screen — each with a ready-to-use "
+            "CSS selector, its visible text, role/placeholder, and rect. Use it "
+            "to resolve plain speech ('the house button') into the exact "
+            "selector for demo.act. Call it before acting when you're not sure "
+            "what to click."
+        ),
+        timeout=25.0,
+    )
+    async def demo_look(session_id: str) -> dict[str, Any]:
+        if not session_id:
+            raise ValueError("sessionId is required")
+        live = _live_sessions.get(session_id)
+        if live is None or live["mode"] != "live":
+            raise ValueError(f"no live session for id {session_id!r}")
+        recorder = live["recorder"]
+        try:
+            return await asyncio.to_thread(recorder.look)
         except DemoRecorderError as exc:
             raise ValueError(str(exc)) from exc
 

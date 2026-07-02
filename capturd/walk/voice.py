@@ -50,7 +50,9 @@ class VoiceConfig:
     """Runtime config for the voice loop."""
 
     model: str = "small.en"          # faster-whisper model size
-    device: str = "auto"             # 'auto' | 'cpu' | 'cuda'
+    # CPU is the portable default: 'auto' picks CUDA and hard-fails on any box
+    # without the cuBLAS/cuDNN libs (most machines). Opt into 'cuda' explicitly.
+    device: str = "cpu"              # 'cpu' | 'cuda'
     compute_type: str = "int8"       # CT2 quantization — int8 is fine on CPU
     input_device: int | None = None  # sounddevice input index (None = default)
     sample_rate: int = 16000
@@ -325,7 +327,7 @@ class VoiceLoop:
 
         from capturd.walk.ai_pipeline import _synthesize_one
 
-        mp3_bytes = await _synthesize_one(text.strip())
+        mp3_bytes, _words = await _synthesize_one(text.strip())
         if not mp3_bytes:
             return
 

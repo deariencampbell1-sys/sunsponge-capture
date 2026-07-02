@@ -99,24 +99,40 @@ def main() -> int:
         })
         client.notify("notifications/initialized")
         names = sorted(t["name"] for t in client.request("tools/list", {}).get("tools", []))
-        for needed in ("demo.act", "demo.narrate"):
+        for needed in ("demo.act", "demo.narrate", "demo.look", "demo.poll_voice"):
             if needed not in names:
                 failures.append(f"{needed} not registered")
-        print(f"[live] tools present: demo.act={('demo.act' in names)} demo.narrate={('demo.narrate' in names)}")
+        print(f"[live] tools present: {[n for n in names if n in ('demo.act','demo.narrate','demo.look','demo.poll_voice')]}")
 
-        # open a live session (headless in CI; visible=True pops on screen)
+        # open a live session (headless in CI, mic off; visible=True + voice pop
+        # the window and enable the mic on a real box)
         rec = client.call_tool("demo.record", {
             "url": app_url,
             "name": "Live signup walkthrough",
             "goal": "Create an account, narrated live.",
             "mode": "live",
             "visible": False,
+            "voice": False,
             "viewport": {"width": 1280, "height": 800},
         })
         session_id = rec["sessionId"]
         print(f"[live] demo.record mode={rec.get('mode')} session={session_id}")
         if rec.get("mode") != "live":
             failures.append(f"expected live mode, got {rec.get('mode')}")
+
+        # demo.look — the selector-resolution helper the voice loop leans on
+        look = client.call_tool("demo.look", {"session_id": session_id})
+        els = look.get("elements") or []
+        el_texts = [e.get("text") or e.get("label") for e in els]
+        print(f"[live] demo.look -> {len(els)} elements: {el_texts[:6]}")
+        if not any((e.get("selector") == "#username") for e in els):
+            failures.append("demo.look did not surface #username with a selector")
+
+        # demo.poll_voice — voice queue tool (empty in CI, voice off)
+        pv = client.call_tool("demo.poll_voice", {"session_id": session_id})
+        print(f"[live] demo.poll_voice -> voiceEnabled={pv.get('voiceEnabled')} transcripts={pv.get('transcripts')}")
+        if "transcripts" not in pv:
+            failures.append("demo.poll_voice did not return a transcripts field")
 
         import base64
         # drive it instruction by instruction, saving each streamed frame
