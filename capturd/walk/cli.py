@@ -30,6 +30,11 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--goal", required=True, help="What the flow demonstrates")
     p.add_argument("--agent", action="store_true",
                    help="Agent-driven (LLM picks each next click). Default: headful, human clicks.")
+    p.add_argument("--voice", action="store_true",
+                   help="Enable push-to-talk voice input (mic button on overlay).")
+    p.add_argument("--workflow", action="store_true",
+                   help="Workflow mode: agent asks 'what are you illustrating?' after each click. "
+                        "Automatically enables --voice.")
     p.add_argument("--viewport", default="1440x900", help="Recording viewport (WxH)")
 
     p = sub.add_parser("stop", help="Stop a recording and kick off AI enrichment")
@@ -92,6 +97,8 @@ def _cmd_record(args: argparse.Namespace) -> int:
         "goal": args.goal,
         "viewport": viewport,
         "mode": "agent" if args.agent else "human",
+        "voice": args.voice or args.workflow,
+        "workflow": args.workflow,
     }
 
     mgr = DemoManager()

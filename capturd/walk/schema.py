@@ -206,6 +206,9 @@ class DemoStep:
     # Voice direction (push-to-talk transcript for the LLM to consume)
     userDirection: str | None = None
 
+    # Workflow-mode intent (agent asks "what are you illustrating?" after click)
+    userIntent: str | None = None
+
     # AI enrichment
     annotation: str | None = None
     voiceoverPath: str | None = None      # local path to per-step audio

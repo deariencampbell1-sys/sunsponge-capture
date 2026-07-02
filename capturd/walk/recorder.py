@@ -455,6 +455,7 @@ class DemoRecorder:
         goal: str,
         viewport: dict[str, int] | None = None,
         output_dir: Path | None = None,
+        workflow_mode: bool = False,
     ) -> None:
         self.session_id = session_id
         self.url = url
@@ -463,6 +464,8 @@ class DemoRecorder:
         self.viewport = viewport or {"width": 1440, "height": 900}
         self.output_dir = output_dir or (Path.cwd() / "demos" / session_id)
         self.output_dir.mkdir(parents=True, exist_ok=True)
+
+        self.workflow_mode = workflow_mode
 
         self.spec = DemoSpec(
             id=session_id,
@@ -756,6 +759,12 @@ class DemoRecorder:
         if self._capture_task is not None:
             raise DemoRecorderError("recorder already started")
 
+        if self.workflow_mode and self.voice_loop is None:
+            raise DemoRecorderError(
+                "workflow mode requires a VoiceLoop — "
+                "pass one via DemoManager.start(payload['voice']=True)"
+            )
+
         self._loop = asyncio.get_running_loop()
         self._playwright = await async_playwright().start()
         self._browser = await _launch_demo_browser(self._playwright)
@@ -890,6 +899,48 @@ class DemoRecorder:
         # Bridge runs in the Playwright async loop — same loop as our task.
         await self._click_queue.put(payload)
 
+    # ----- workflow-mode dialog loop -----------------------------------------
+
+    async def _prompt_step_intent(self, step: DemoStep) -> None:
+        """Ask the user what they're illustrating after a click (workflow mode).
+
+        1. Compose a short question from the step's interaction data.
+        2. Speak the question via TTS (voice_loop.reply).
+        3. Capture the user's spoken answer (voice_loop.push_to_talk, 8s window).
+        4. Persist ``userIntent`` on the step and append to ``annotation``.
+
+        Gracefully handles empty transcripts (user says nothing).
+        """
+        if self.voice_loop is None:
+            return  # defensive — caller guards this
+
+        target = step.interaction.target
+        target_desc = target.get("text") or target.get("selector", "element")
+        # Keep under 15 words — TTS latency matters.
+        # Truncate target_desc if it's very long.
+        if len(target_desc) > 40:
+            target_desc = target_desc[:37] + "..."
+        question = f"You clicked {target_desc}. What are you illustrating here?"
+
+        # 1. Speak the question.
+        try:
+            await self.voice_loop.reply(question)
+        except Exception as exc:
+            logger.warning("workflow TTS reply failed: %s", exc)
+            # Continue anyway — the overlay shows the question text.
+
+        # 2. Listen for answer (8s window).
+        try:
+            transcript = await self.voice_loop.push_to_talk(duration_ms=8000)
+        except Exception as exc:
+            logger.warning("workflow push_to_talk failed: %s", exc)
+            transcript = ""
+
+        # 3. Persist.
+        if transcript and transcript.strip():
+            step.userIntent = transcript.strip()
+            step.annotation = (step.annotation or "") + f" [user intent: {transcript.strip()}]"
+
     # ----- capture loop ------------------------------------------------------
 
     async def _capture_loop(self) -> None:
@@ -960,6 +1011,13 @@ class DemoRecorder:
                 )
             self.spec.steps.append(step)
             self._last_url = step.pageUrl
+
+            # Workflow mode: after each user click, prompt for intent.
+            if self.workflow_mode and not is_voice and self.voice_loop is not None:
+                try:
+                    await self._prompt_step_intent(step)
+                except Exception as exc:
+                    logger.warning("workflow intent prompt failed: %s", exc)
 
             # Update the on-page badge step count.
             try:
@@ -1040,6 +1098,13 @@ class DemoManager:
         out_dir = self.output_root / session_id
 
         voice_enabled = bool(payload.get("voice"))
+        workflow_enabled = bool(payload.get("workflow"))
+
+        if workflow_enabled and not voice_enabled:
+            raise DemoRecorderError(
+                "workflow mode requires voice — pass voice=True alongside workflow=True"
+            )
+
         recorder = DemoRecorder(
             session_id=session_id,
             url=url,
@@ -1047,11 +1112,12 @@ class DemoManager:
             goal=goal,
             viewport=viewport,
             output_dir=out_dir,
+            workflow_mode=workflow_enabled,
         )
         if voice_enabled:
             try:
                 voice_cfg = VoiceConfig(
-                    workflow_mode=bool(payload.get("workflowMode")),
+                    workflow_mode=workflow_enabled,
                 )
                 recorder.voice_loop = VoiceLoop(config=voice_cfg)
             except VoiceLoopError:
