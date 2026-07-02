@@ -110,6 +110,8 @@ def _build_server(forge: DemoForge | None = None) -> FastMCP:
         name: str,
         goal: str = "",
         viewport: dict[str, int] | None = None,
+        workflow: bool = False,
+        voice: bool = False,
     ) -> dict[str, Any]:
         if not url:
             raise ValueError("url is required")
@@ -122,6 +124,8 @@ def _build_server(forge: DemoForge | None = None) -> FastMCP:
                     "name": name,
                     "goal": goal,
                     "viewport": viewport or {"width": 1440, "height": 900},
+                    "workflow": workflow,
+                    "voice": voice or workflow,
                 }
             )
         except DemoRecorderError as exc:
