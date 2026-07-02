@@ -228,6 +228,137 @@ OVERLAY_JS = r"""
 
 
 # ---------------------------------------------------------------------------
+# Synthetic cursor overlay — a big, visible pointer we place at the action
+# target so the LIVE stream frames (and the person watching) show a clear
+# "here's the mouse" + a click ripple. It's hidden around the clean recorded
+# screenshots (the export draws its own cinematic cursor on top of those).
+# ---------------------------------------------------------------------------
+
+CURSOR_OVERLAY_JS = r"""
+(() => {
+  if (window.__demoCursorInstalled) return;
+  window.__demoCursorInstalled = true;
+  const ID = '__demo-cursor';
+
+  function ensure() {
+    let c = document.getElementById(ID);
+    if (c) return c;
+    c = document.createElement('div');
+    c.id = ID;
+    c.style.cssText = [
+      'position: fixed', 'left: -200px', 'top: -200px',
+      'width: 30px', 'height: 42px', 'z-index: 2147483646',
+      'pointer-events: none', 'transform: translate(-3px, -3px)',
+      'filter: drop-shadow(0 2px 3px rgba(0,0,0,0.5))',
+      'transition: left 0.12s ease-out, top 0.12s ease-out', 'visibility: hidden',
+    ].join(';');
+    c.innerHTML =
+      '<svg width="30" height="42" viewBox="0 0 30 42" xmlns="http://www.w3.org/2000/svg">' +
+      '<path d="M0 0 L0 32 L8.5 24.5 L13.8 37 L18.5 35 L13.2 22.5 L23.5 22 Z" ' +
+      'fill="#ffffff" stroke="#151719" stroke-width="1.8" stroke-linejoin="round"/></svg>';
+    const ring = document.createElement('div');
+    ring.id = ID + '-ring';
+    ring.style.cssText = [
+      'position: fixed', 'left: -200px', 'top: -200px',
+      'width: 20px', 'height: 20px', 'margin: -10px 0 0 -10px', 'border-radius: 50%',
+      'border: 3px solid rgba(79,140,255,0.9)', 'z-index: 2147483645',
+      'pointer-events: none', 'opacity: 0', 'visibility: hidden',
+    ].join(';');
+    (document.body || document.documentElement).appendChild(c);
+    (document.body || document.documentElement).appendChild(ring);
+    return c;
+  }
+
+  // Position the cursor at viewport px (x,y); click=true fires a ripple.
+  window.__demoCursor = (x, y, click) => {
+    const c = ensure();
+    const ring = document.getElementById(ID + '-ring');
+    c.style.visibility = 'visible';
+    c.style.left = x + 'px';
+    c.style.top = y + 'px';
+    if (ring) {
+      ring.style.visibility = 'visible';
+      ring.style.left = x + 'px';
+      ring.style.top = y + 'px';
+      if (click) {
+        ring.animate(
+          [ { transform: 'scale(0.4)', opacity: 0.9 },
+            { transform: 'scale(2.4)', opacity: 0 } ],
+          { duration: 450, easing: 'ease-out' }
+        );
+      }
+    }
+  };
+  // Hide/show both the cursor and the RECORDING badge around a clean capture.
+  window.__demoChrome = (show) => {
+    const v = show ? 'visible' : 'hidden';
+    ['__demo-cursor', '__demo-cursor-ring', '__demo-recorder-indicator']
+      .forEach(id => { const el = document.getElementById(id); if (el) el.style.visibility = v; });
+  };
+  ensure();
+})();
+"""
+
+
+# JS run by look() — a ranked digest of interactable elements so the driving
+# agent can turn plain speech ("the house button") into a CSS selector.
+_LOOK_JS = r"""
+(max) => {
+  function sel(el) {
+    if (el.id) return '#' + (window.CSS && CSS.escape ? CSS.escape(el.id) : el.id);
+    const parts = [];
+    let cur = el;
+    while (cur && cur !== document.body && parts.length < 5) {
+      let s = cur.tagName.toLowerCase();
+      if (cur.classList && cur.classList.length) {
+        const cls = Array.from(cur.classList).slice(0, 2)
+          .map(c => '.' + (window.CSS && CSS.escape ? CSS.escape(c) : c)).join('');
+        s += cls;
+      }
+      const p = cur.parentElement;
+      if (p) {
+        const sibs = Array.from(p.children).filter(x => x.tagName === cur.tagName);
+        if (sibs.length > 1) s += ':nth-of-type(' + (sibs.indexOf(cur) + 1) + ')';
+      }
+      parts.unshift(s);
+      if (cur.id) { parts[0] = '#' + (window.CSS && CSS.escape ? CSS.escape(cur.id) : cur.id); break; }
+      cur = cur.parentElement;
+    }
+    return parts.join(' > ');
+  }
+  const selParts = 'a,button,input,textarea,select,[role=button],[role=link],[role=tab],[onclick],summary,label,[contenteditable=true]';
+  const seen = new Set();
+  const out = [];
+  const els = Array.from(document.querySelectorAll(selParts));
+  for (const el of els) {
+    const r = el.getBoundingClientRect();
+    if (r.width < 4 || r.height < 4) continue;
+    if (r.bottom < 0 || r.top > window.innerHeight || r.right < 0 || r.left > window.innerWidth) continue;
+    const st = getComputedStyle(el);
+    if (st.visibility === 'hidden' || st.display === 'none' || +st.opacity === 0) continue;
+    let text = (el.innerText || el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 60);
+    const label = (el.getAttribute('aria-label') || el.getAttribute('placeholder')
+                   || el.getAttribute('title') || el.getAttribute('name') || '').trim();
+    const key = text + '|' + label + '|' + Math.round(r.x) + ',' + Math.round(r.y);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({
+      selector: sel(el),
+      tag: el.tagName.toLowerCase(),
+      type: el.getAttribute('type') || '',
+      role: el.getAttribute('role') || '',
+      text: text,
+      label: label,
+      rect: { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) },
+    });
+    if (out.length >= max) break;
+  }
+  return out;
+}
+"""
+
+
+# ---------------------------------------------------------------------------
 # Browser launch — headful, with the same Windows channel fallback the capture
 # service uses. We deliberately don't import _launch_browser from
 # capture_service because that one is hardcoded to headless=True.
@@ -499,7 +630,8 @@ class DemoRecorder:
         self._loop: asyncio.AbstractEventLoop | None = None
         # Voice — enabled when payload["voice"] is True.
         self.voice_loop: VoiceLoop | None = None
-        self._voice_transcripts: list[str] = []  # accumulated transcripts
+        self._voice_transcripts: list[str] = []  # accumulated transcripts (drained by poll_voice)
+        self._voice_lock = threading.Lock()
 
     # ----- lifecycle ---------------------------------------------------------
 
@@ -822,45 +954,38 @@ class DemoRecorder:
         # Bridge: JS calls window.recordClick(payload) → Python callback.
         await self._page.expose_function("recordClick", self._on_click)
 
-        # Voice push-to-talk bridges (if voice_loop is active).
+        # Voice push-to-talk — the "hit the mic and talk to it" surface. It's
+        # OPTIONAL: if the voice extra (faster-whisper/sounddevice) isn't
+        # installed or the mic won't open, we log it and carry on WITHOUT the
+        # mic button — the session still records fine via typed demo.act.
+        voice_ok = False
         if self.voice_loop is not None:
-            await self._page.expose_function("__demoMicStart", self.voice_loop._js_mic_start)
-            await self._page.expose_function("__demoMicStop", self.voice_loop._js_mic_stop)
-            # Callback: JS hands transcript back to Python after mic release.
-            await self._page.evaluate("""
-                window.__demoOnVoiceTranscript = (text) => {
-                    window.__demoRecorderLastVoiceTranscript = text;
-                    // Also relay through recordClick shape so the recorder
-                    // picks it up as a userDirection on the next step.
-                    if (typeof window.recordClick === 'function') {
-                        window.recordClick({
-                            type: 'voice',
-                            transcript: text,
-                            pageUrl: location.href,
-                            pageTitle: document.title,
-                            timestamp: Date.now(),
-                        });
-                    }
-                };
-            """)
+            try:
+                await self.voice_loop.start(on_utterance=self._append_voice, page=self._page)
+                await self._page.expose_function("__demoMicStart", self.voice_loop._js_mic_start)
+                await self._page.expose_function("__demoMicStop", self.voice_loop._js_mic_stop)
+                voice_ok = True
+            except VoiceLoopError as exc:
+                logger.warning("voice disabled (%s) — session runs without the mic button", exc)
+                self.voice_loop = None
+            except Exception as exc:  # noqa: BLE001 - never let voice break the session
+                logger.warning("voice failed to start (%s) — continuing without it", exc)
+                self.voice_loop = None
 
-        # Init script re-installs overlay on every navigation.
-        await self._page.add_init_script(OVERLAY_JS + "\n" + MIC_BUTTON_JS)
+        # Init script re-installs overlay (+ mic button + synthetic cursor) on
+        # every navigation.
+        init_js = OVERLAY_JS + "\n" + CURSOR_OVERLAY_JS
+        if voice_ok:
+            init_js += "\n" + MIC_BUTTON_JS
+        await self._page.add_init_script(init_js)
 
         await self._page.goto(self.url, wait_until="domcontentloaded")
         self._last_url = self._page.url
         self._started_at_ms = int(time.time() * 1000)
 
-        # Start voice loop if enabled.
-        if self.voice_loop is not None:
-            await self.voice_loop.start(
-                on_utterance=lambda text: self._voice_transcripts.append(text),
-                page=self._page,
-            )
-
         self._capture_task = asyncio.create_task(self._capture_loop(), name=f"demo-cap-{self.session_id}")
-        logger.info("demo recorder started: session=%s url=%s voice=%s",
-                     self.session_id, self.url, self.voice_loop is not None)
+        logger.info("demo recorder started: session=%s url=%s voice=%s headful=%s",
+                     self.session_id, self.url, voice_ok, self.headful)
 
     def stop(self) -> DemoSpec:
         """Stop the recorder from any thread/loop and return the persisted spec.
@@ -987,6 +1112,20 @@ class DemoRecorder:
         if action in ("click", "input") and not selector:
             raise DemoRecorderError(f"{action} requires a selector")
 
+        # Capture the target's on-screen point BEFORE acting — a click that
+        # navigates destroys the element, so we can't find it afterward.
+        target_pt = None
+        if selector:
+            try:
+                target_pt = await self._page.evaluate(
+                    "(s) => { const e = document.querySelector(s); if (!e) return null;"
+                    " const r = e.getBoundingClientRect();"
+                    " return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; }",
+                    selector,
+                )
+            except Exception:
+                target_pt = None
+
         before = len(self.spec.steps)
         await self._execute_agent_action(action, selector, value)
 
@@ -1008,7 +1147,21 @@ class DemoRecorder:
             step.annotation = note.strip()
             step.userDirection = note.strip()
 
-        # Stream a lightweight frame back to the harness/chat.
+        # Place the big synthetic cursor on the target (captured pre-action, so
+        # it's right even when the click navigated away) + fire a click ripple
+        # so the streamed frame shows the mouse "doing the thing".
+        try:
+            if target_pt:
+                clicking = action == "click"
+                await self._page.evaluate(
+                    "(a) => window.__demoCursor && window.__demoCursor(a[0], a[1], a[2])",
+                    [target_pt["x"], target_pt["y"], clicking],
+                )
+                await asyncio.sleep(0.12)
+        except Exception:
+            pass
+
+        # Stream a lightweight frame back to the harness/chat (cursor visible).
         frame_b64 = ""
         try:
             jpeg = await self._page.screenshot(type="jpeg", quality=55)
@@ -1061,6 +1214,62 @@ class DemoRecorder:
         step.userDirection = text
         return {"stepIndex": step.index, "annotation": text}
 
+    # ----- voice-drive: the owner talks, the harness hears + acts -------------
+
+    def _append_voice(self, text: str) -> None:
+        """on_utterance callback for the VoiceLoop (runs on the recorder loop)."""
+        if text and text.strip():
+            with self._voice_lock:
+                self._voice_transcripts.append(text.strip())
+
+    def poll_voice(self) -> dict[str, Any]:
+        """Thread-safe: return and CLEAR the queued voice transcripts.
+
+        The driving harness polls this: whatever the owner said into the mic
+        since the last poll comes back here, and the harness turns it into
+        demo.act / demo.narrate calls. Empty list == nothing new said.
+        """
+        with self._voice_lock:
+            out = list(self._voice_transcripts)
+            self._voice_transcripts.clear()
+        return {
+            "transcripts": out,
+            "voiceEnabled": self.voice_loop is not None,
+        }
+
+    def look(self, max_elements: int = 40) -> dict[str, Any]:
+        """Thread-safe: current frame + a digest of interactable elements.
+
+        Gives the driving agent what it needs to turn "click the house button"
+        into a concrete selector: a jpeg frame plus a ranked list of visible
+        clickable/typeable elements with a stable selector, their visible text,
+        role/placeholder, and rect.
+        """
+        if self._loop is None or self._page is None:
+            raise DemoRecorderError("session is not running")
+        future = asyncio.run_coroutine_threadsafe(self._look_async(max_elements), self._loop)
+        return future.result(timeout=20.0)
+
+    async def _look_async(self, max_elements: int) -> dict[str, Any]:
+        assert self._page is not None
+        elements: list[dict[str, Any]] = []
+        try:
+            elements = await self._page.evaluate(_LOOK_JS, max_elements)
+        except Exception as exc:
+            logger.warning("look() element scan failed: %s", exc)
+        frame_b64 = ""
+        try:
+            jpeg = await self._page.screenshot(type="jpeg", quality=55)
+            frame_b64 = base64.b64encode(jpeg).decode("ascii")
+        except Exception as exc:
+            logger.warning("look() frame capture failed: %s", exc)
+        return {
+            "url": await self._safe_title_or_url("url"),
+            "pageTitle": await self._safe_title_or_url("title"),
+            "elements": elements,
+            "frameBase64": frame_b64,
+        }
+
     async def _record_synthetic_step(
         self, action: str, selector: str | None, value: str | None
     ) -> None:
@@ -1092,10 +1301,18 @@ class DemoRecorder:
             }
 
         try:
+            await self._page.evaluate("() => window.__demoChrome && window.__demoChrome(false)")
+        except Exception:
+            pass
+        try:
             png_bytes = await self._page.screenshot(full_page=False, type="png")
         except Exception as exc:
             logger.warning("synthetic step screenshot failed: %s", exc)
             png_bytes = b""
+        try:
+            await self._page.evaluate("() => window.__demoChrome && window.__demoChrome(true)")
+        except Exception:
+            pass
         shot_path = self.output_dir / f"step_{step_index:03d}.png"
         if png_bytes:
             shot_path.write_bytes(png_bytes)
@@ -1185,13 +1402,10 @@ class DemoRecorder:
             is_voice = payload_type == "voice"
 
             # Screenshot AFTER the event so we capture the post-event state.
-            # The RECORDING badge is UI for the person driving, not part of
-            # the product being demoed — hide it around the capture.
+            # The RECORDING badge + synthetic cursor are driver UI, not part of
+            # the product being demoed — hide both around the clean capture.
             try:
-                await self._page.evaluate(
-                    "() => { const b = document.getElementById('__demo-recorder-indicator');"
-                    " if (b) b.style.visibility = 'hidden'; }"
-                )
+                await self._page.evaluate("() => window.__demoChrome && window.__demoChrome(false)")
             except Exception:
                 pass
             try:
@@ -1200,10 +1414,7 @@ class DemoRecorder:
                 logger.warning("screenshot failed on step %d: %s", step_index, exc)
                 png_bytes = b""
             try:
-                await self._page.evaluate(
-                    "() => { const b = document.getElementById('__demo-recorder-indicator');"
-                    " if (b) b.style.visibility = 'visible'; }"
-                )
+                await self._page.evaluate("() => window.__demoChrome && window.__demoChrome(true)")
             except Exception:
                 pass
 
@@ -1349,7 +1560,9 @@ class DemoManager:
         session_id = payload.get("sessionId") or self.new_session_id()
         out_dir = self.output_root / session_id
 
-        voice_enabled = bool(payload.get("voice"))
+        # Live sessions default voice ON (the whole point is talking to it);
+        # agent/human default off. Non-fatal if the voice extra isn't installed.
+        voice_enabled = bool(payload.get("voice", mode == "live"))
         workflow_enabled = bool(payload.get("workflow"))
 
         if workflow_enabled and not voice_enabled:

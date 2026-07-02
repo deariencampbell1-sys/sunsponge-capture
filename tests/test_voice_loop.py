@@ -204,7 +204,7 @@ def test_voice_config_defaults() -> None:
     """VoiceConfig has sensible defaults."""
     cfg = VoiceConfig()
     assert cfg.model == "small.en"
-    assert cfg.device == "auto"
+    assert cfg.device == "cpu"  # portable default — 'auto' picks CUDA and fails without cuBLAS
     assert cfg.compute_type == "int8"
     assert cfg.sample_rate == 16000
     assert cfg.input_device is None

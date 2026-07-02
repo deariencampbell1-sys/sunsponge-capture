@@ -70,3 +70,35 @@ def test_narrate_without_steps_raises(tmp_path):
                        output_dir=tmp_path / "s")
     with pytest.raises(DemoRecorderError):
         rec.narrate("hello")
+
+
+def test_voice_tools_registered():
+    names = _tool_names()
+    assert {"demo.poll_voice", "demo.look"} <= names
+
+
+def test_poll_voice_drains_queue(tmp_path):
+    rec = DemoRecorder(session_id="s", url="https://example.com", name="x", goal="",
+                       output_dir=tmp_path / "s")
+    # simulate the VoiceLoop delivering two utterances
+    rec._append_voice("click the house button")
+    rec._append_voice("now type my email")
+    first = rec.poll_voice()
+    assert first["transcripts"] == ["click the house button", "now type my email"]
+    assert first["voiceEnabled"] is False  # no VoiceLoop attached
+    # queue is cleared after a poll
+    assert rec.poll_voice()["transcripts"] == []
+
+
+def test_live_mode_defaults_voice_on(tmp_path):
+    mgr = DemoManager(output_root=tmp_path)
+    rec, _sid, _mode = mgr.start({"url": "https://example.com", "name": "x", "mode": "live"})
+    assert rec.voice_loop is not None  # live turns the mic on by default
+
+
+def test_live_mode_voice_can_be_disabled(tmp_path):
+    mgr = DemoManager(output_root=tmp_path)
+    rec, _sid, _mode = mgr.start(
+        {"url": "https://example.com", "name": "x", "mode": "live", "voice": False}
+    )
+    assert rec.voice_loop is None
