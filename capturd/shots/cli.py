@@ -1,4 +1,8 @@
-"""Command-line interface for SunSponge Capture."""
+"""Command-line interface for `capturd shots` — rested-state screenshot batch.
+
+Invoked either as ``capturd shots ...`` (via the top-level dispatcher) or as
+the legacy ``sunsponge-capture ...`` alias (backwards compat for older scripts).
+"""
 
 from __future__ import annotations
 
@@ -15,10 +19,11 @@ def _split(value: str | None) -> list[str]:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="sunsponge-capture",
+        prog="capturd shots",
         description=(
-            "Rested-state website screenshot batch tool — settled, animation-free, "
-            "full-page shots across viewports and color schemes."
+            "Rested-state website screenshot batch — settled, animation-free, "
+            "full-page shots across viewports and color schemes. "
+            "(Also invokable as `sunsponge-capture` for backwards compat.)"
         ),
     )
     source = parser.add_mutually_exclusive_group(required=True)

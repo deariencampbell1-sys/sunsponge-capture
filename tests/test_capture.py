@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sunsponge_capture.capture import (
+from capturd.shots.capture import (
     RestedCaptureError,
     build_capture_plan,
     discover_local_html,
@@ -84,7 +84,7 @@ def test_build_capture_plan_crawl_uses_discovered_pages(monkeypatch):
         return ["https://example.com/", "https://example.com/about/"], {"mode": "site", "page_count": 2}
 
     monkeypatch.setattr(
-        "sunsponge_capture.capture.discover_site_urls",
+        "capturd.shots.capture.discover_site_urls",
         fake_discover_site_urls,
     )
     urls, targets, settings = build_capture_plan({

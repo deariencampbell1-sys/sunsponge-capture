@@ -21,4 +21,11 @@ Binds you whether spun up as worker, crew agent, Pi step, or courier. Read first
 5. STAY IN YOUR LANE. Do only the lane you were given. Out-of-lane → flag, don't absorb.
 <!-- /RHOBEAR-CANON -->
 
-This repo = rested-state bulk website screenshot capture tool (Playwright) (one lane).
+This repo = **Captur'd by Sun Sponge** — post-work product capture (one lane, two modes):
+
+* **`capturd shots`** — rested-state bulk website screenshots (Playwright). Settled, animation-free full-page shots across viewports and color schemes.
+* **`capturd walk`** — agent-made interactive product demos. Live DOM via rrweb (not stale screenshots), semantic zoom via panzoom, voice-synced camera (TTS word timestamps → keyframe alignment), content-mode auto-detection (DOM / video / hybrid) so canvas / Three.js / HTML5 games get a video-mode fallback instead of a silent break. **Push-to-talk voice input (Whisper)** so you TALK to the agent while it walks — "top left is X, pan in here before the click." **Workflow mode** — agent watches you click each step, asks between clicks what you're illustrating, extracts intent via voice dialog.
+
+Both modes are exposed via one MCP surface (`capturd serve`) so any RHOBEAR agent (Plans, social manager, support, pi) drives them through `capture.*` / `demo.*` tools. Editing IS the API — the agent is the editor; there is no GUI editor as v1. See `README.md` for the pitch, `capturd/walk/coordinator.py` for the glue, `capturd/walk/schema.py` for the DemoSpec contract.
+
+Do **not** silently expand the lane further. Analytics dashboards, user accounts, hosted CDN, demo hub CMS — all out of lane. Flag, don't absorb.

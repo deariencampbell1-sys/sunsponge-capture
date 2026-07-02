@@ -3,27 +3,46 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "sunsponge-capture"
-version = "0.1.0"
-description = "Rested-state website screenshot batch tool — settled, animation-free full-page shots across viewports and color schemes."
+name = "capturd"
+version = "0.2.0"
+description = "Captur'd by Sun Sponge — post-work product capture. Rested-state stills + agent-made walkthrough demos with voice-synced zoom, live DOM fidelity, and an MCP surface any RHOBEAR agent can drive."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [{ name = "SunSponge LLC" }]
-keywords = ["screenshot", "playwright", "website", "responsive", "qa", "capture", "visual-regression"]
+keywords = [
+    "screenshot", "playwright", "website", "responsive", "qa", "capture",
+    "visual-regression", "product-demo", "walkthrough", "interactive-demo",
+    "supademo-alternative", "screen-studio-alternative", "mcp"
+]
 classifiers = [
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Topic :: Software Development :: Quality Assurance",
     "Topic :: Multimedia :: Graphics :: Capture :: Screen Capture",
+    "Topic :: Multimedia :: Video :: Capture",
 ]
-dependencies = ["playwright>=1.40"]
+dependencies = [
+    "playwright>=1.40",
+    "openai>=1.30",
+    "fastmcp>=0.4",
+    "edge-tts>=6.1",
+    "httpx>=0.27",
+]
 
 [project.optional-dependencies]
+# Voice input — push-to-talk while watching the agent walk the flow.
+# faster-whisper is CT2-backed (~5x openai-whisper) and offline-capable.
+# Pull only when you actually want voice mode; ~500MB of native deps.
+voice = ["faster-whisper>=1.0", "sounddevice>=0.4"]
 dev = ["pytest>=7"]
+all = ["faster-whisper>=1.0", "sounddevice>=0.4", "pytest>=7"]
 
 [project.scripts]
-sunsponge-capture = "sunsponge_capture.cli:main"
+# New top-level dispatcher: `capturd shots ...` | `capturd walk ...` | `capturd serve`
+capturd = "capturd.cli:main"
+# Legacy alias so existing users' scripts don't break — points at the shots CLI directly
+sunsponge-capture = "capturd.shots.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/deariencampbell1-sys/sunsponge-capture"
@@ -31,4 +50,7 @@ Source = "https://github.com/deariencampbell1-sys/sunsponge-capture"
 Issues = "https://github.com/deariencampbell1-sys/sunsponge-capture/issues"
 
 [tool.setuptools]
-packages = ["sunsponge_capture"]
+packages = ["capturd", "capturd.shots", "capturd.walk", "capturd.mcp"]
+
+[tool.setuptools.package-data]
+"capturd.walk" = ["templates/*.html"]
